@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linkage Editor</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --bg2: #f1efe8;
+    --fg: #1a1a18;
+    --fg2: #5f5e5a;
+    --fg3: #9c9a92;
+    --border: rgba(0,0,0,0.12);
+    --border2: rgba(0,0,0,0.25);
+    --info-bg: #e6f1fb;
+    --info-fg: #0c447c;
+    --info-border: #378add;
+    --danger: #a32d2d;
+    --radius: 8px;
+    --mono: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1f1f1c;
+      --bg2: #2a2a26;
+      --fg: #f0ece2;
+      --fg2: #c2c0b6;
+      --fg3: #73726c;
+      --border: rgba(255,255,255,0.12);
+      --border2: rgba(255,255,255,0.25);
+      --info-bg: #0c2b4a;
+      --info-fg: #85b7eb;
+      --info-border: #378add;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--fg);
+    overflow: hidden;
+  }
+  body {
+    display: grid;
+    grid-template-columns: 1fr 240px;
+    gap: 10px;
+    padding: 10px;
+  }
+  .canvas-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    min-width: 0;
+  }
+  .canvas-wrap {
+    flex: 1;
+    position: relative;
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .toolbar {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border-bottom: 0.5px solid var(--border);
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .canvas-wrap svg {
+    flex: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    background: transparent;
+  }
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+  }
+  .side .bar { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: var(--radius);
+    border: 0.5px solid var(--border2);
+    background: transparent;
+    cursor: pointer;
+    color: var(--fg);
+    font-family: inherit;
+    transition: background 0.12s;
+  }
+  .btn:hover { background: var(--bg2); }
+  .btn.primary {
+    background: var(--info-bg);
+    color: var(--info-fg);
+    border-color: var(--info-border);
+  }
+  .side textarea {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 8px;
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--fg);
+    resize: none;
+    line-height: 1.5;
+    outline: none;
+    min-height: 200px;
+  }
+  .side textarea:focus { border-color: var(--info-border); }
+  .status {
+    font-size: 13px;
+    color: var(--fg2);
+    padding: 6px 2px;
+    min-height: 18px;
+    line-height: 1.4;
+  }
+  .status.err { color: var(--danger); }
+  .hint {
+    font-size: 12px;
+    color: var(--fg3);
+    padding: 4px 2px;
+    line-height: 1.5;
+  }
+  .coords {
+    font-size: 12px;
+    color: var(--fg3);
+    font-family: var(--mono);
+    padding: 3px 8px;
+    margin-left: auto;
+  }
+  .section-label {
+    font-size: 11px;
+    color: var(--fg3);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 4px;
+  }
+  .size-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--fg2);
+  }
+  .size-control input {
+    width: 60px;
+  }
+  .ctx-menu {
+    position: fixed;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 4px 0;
+    min-width: 160px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    z-index: 999;
+    font-size: 13px;
+  }
+  .ctx-menu div {
+    padding: 6px 14px;
+    cursor: pointer;
+    color: var(--fg);
+  }
+  .ctx-menu div:hover {
+    background: var(--info-bg);
+    color: var(--info-fg);
+  }
+  .ctx-menu .danger { color: var(--danger); }
+  .ctx-menu .danger:hover { background: #f8e0e0; }
+  @media (prefers-color-scheme: dark) {
+    .ctx-menu .danger:hover { background: #3a1c1c; }
+  }
+</style>
+</head>
+<body>
+  <div class="canvas-col">
+    <div class="canvas-wrap">
+      <div class="toolbar">
+        <button class="btn" id="finishBtn">finish link</button>
+        <button class="btn" id="undoBtn">undo</button>
+        <button class="btn" id="deleteBtn">delete last link</button>
+        <button class="btn" id="clearBtn">clear</button>
+        <button class="btn" id="gridBtn">grid</button>
+        <button class="btn" id="snapBtn">snap: 20</button>
+        <span class="size-control">
+          pt<input type="range" id="ptSizeSlider" min="10" max="48" value="24" step="1"/>
+          <span id="ptSizeVal" style="min-width:22px; text-align:right; font-family:var(--mono)">24</span>
+        </span>
+        <span class="size-control">
+          link<input type="range" id="linkSizeSlider" min="12" max="56" value="30" step="1"/>
+          <span id="linkSizeVal" style="min-width:22px; text-align:right; font-family:var(--mono)">30</span>
+        </span>
+        <span class="coords" id="coordDisplay">-</span>
+      </div>
+      <svg id="canvas" viewBox="0 0 900 1100" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="status" id="status">click to start the first link.</div>
+    <div class="hint">
+      left click = add point &nbsp;·&nbsp; near existing point = joint &nbsp;·&nbsp; right click = finish link &nbsp;·&nbsp; drag finished link to move
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="bar">
+      <button class="btn primary" id="applyBtn">apply</button>
+      <button class="btn" id="copyBtn">copy</button>
+      <button class="btn" id="saveBtn">save</button>
+      <button class="btn" id="loadBtn">load</button>
+      <input type="file" id="fileInput" style="display:none" accept=".txt,.linkage">
+    </div>
+    <div class="section-label">link definition</div>
+    <textarea id="defText" spellcheck="false"></textarea>
+  </div>
+
+<script>
+(function(){
+  const svg = document.getElementById('canvas');
+  const text = document.getElementById('defText');
+  const status = document.getElementById('status');
+  const coordDisplay = document.getElementById('coordDisplay');
+
+  const VB_W = 900, VB_H = 1100;
+
+  const state = {
+    links: [],
+    joints: [],
+    currentLink: null,
+    nextLinkId: 0,
+    showGrid: true,
+    snap: true,
+    snapSize: 20,
+    pointLabelSize: 24,
+    linkLabelSize: 30,
+    hoverInfo: null,
+    drag: null
+  };
+
+  let dragEndTime = 0;
+
+  const LINK_COLORS = ['#7F77DD', '#D85A30', '#1D9E75', '#EF9F27', '#378ADD', '#D4537E', '#534AB7', '#0F6E56', '#BA7517', '#185FA5'];
+
+  function nextLinkName() { return 'L' + (state.nextLinkId++); }
+
+  function newLink() {
+    return {
+      name: nextLinkName(),
+      color: LINK_COLORS[state.links.length % LINK_COLORS.length],
+      points: {},
+      order: [],
+      nextPointId: 0
+    };
+  }
+
+  function addPointToLink(link, pos) {
+    const local = 'p' + (link.nextPointId++);
+    link.points[local] = { x: pos.x, y: pos.y };
+    link.order.push(local);
+    return local;
+  }
+
+  function refOf(linkName, localName) { return linkName + '.' + localName; }
+  function parseRef(ref) {
+    const idx = ref.indexOf('.');
+    return { link: ref.slice(0, idx), point: ref.slice(idx + 1) };
+  }
+  function getPoint(ref) {
+    const r = parseRef(ref);
+    const link = state.links.find(l => l.name === r.link) ||
+                 (state.currentLink && state.currentLink.name === r.link ? state.currentLink : null);
+    if (!link) return null;
+    return link.points[r.point];
+  }
+
+  function svgCoords(evt) {
+    const rect = svg.getBoundingClientRect();
+    const scale = Math.min(rect.width / VB_W, rect.height / VB_H);
+    const renderedW = VB_W * scale, renderedH = VB_H * scale;
+    const offsetX = (rect.width - renderedW) / 2;
+    const offsetY = (rect.height - renderedH) / 2;
+    const x = (evt.clientX - rect.left - offsetX) / scale;
+    const y = (evt.clientY - rect.top - offsetY) / scale;
+    if (state.snap) {
+      return {
+        x: Math.round(x / state.snapSize) * state.snapSize,
+        y: Math.round(y / state.snapSize) * state.snapSize
+      };
+    }
+    return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
+  }
+
+  function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+  function findNearPoint(pos, threshold) {
+    threshold = threshold || 14;
+    let best = null, bestD = threshold;
+    const check = (linkName, link) => {
+      for (const local in link.points) {
+        const d = distance(pos, link.points[local]);
+        if (d < bestD) { bestD = d; best = refOf(linkName, local); }
+      }
+    };
+    state.links.forEach(l => check(l.name, l));
+    if (state.currentLink) check(state.currentLink.name, state.currentLink);
+    return best;
+  }
+
+  function findNearSegment(pos, threshold) {
+    threshold = threshold || 12;
+    for (let li = state.links.length - 1; li >= 0; li--) {
+      const link = state.links[li];
+      for (let i = 0; i < link.order.length - 1; i++) {
+        const a = link.points[link.order[i]];
+        const b = link.points[link.order[i + 1]];
+        if (!a || !b) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len2 = dx * dx + dy * dy;
+        if (len2 === 0) continue;
+        let t = ((pos.x - a.x) * dx + (pos.y - a.y) * dy) / len2;
+        t = Math.max(0, Math.min(1, t));
+        const cx = a.x + t * dx, cy = a.y + t * dy;
+        if (distance(pos, { x: cx, y: cy }) < threshold) return li;
+      }
+    }
+    return -1;
+  }
+
+  function jointGroup(ref) {
+    const group = new Set([ref]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      state.joints.forEach(j => {
+        if (group.has(j.a) && !group.has(j.b)) { group.add(j.b); changed = true; }
+        if (group.has(j.b) && !group.has(j.a)) { group.add(j.a); changed = true; }
+      });
+    }
+    return group;
+  }
+
+  function placeLabel(occupied, x, y, w, h) {
+    const offsets = [
+      { dx: 12, dy: -14 }, { dx: -w - 12, dy: -14 },
+      { dx: 12, dy: 20 }, { dx: -w - 12, dy: 20 },
+      { dx: 16, dy: 6 }, { dx: -w - 16, dy: 6 },
+      { dx: 12, dy: -32 }, { dx: -w - 12, dy: -32 },
+      { dx: 12, dy: 40 }, { dx: -w - 12, dy: 40 }
+    ];
+    for (const c of offsets) {
+      const rect = { x: x + c.dx, y: y + c.dy - h, w, h };
+      let hit = false;
+      for (const o of occupied) {
+        if (rect.x < o.x + o.w && rect.x + rect.w > o.x &&
+            rect.y < o.y + o.h && rect.y + rect.h > o.y) { hit = true; break; }
+      }
+      if (!hit) {
+        occupied.push(rect);
+        return { x: x + c.dx, y: y + c.dy };
+      }
+    }
+    occupied.push({ x: x + offsets[0].dx, y: y + offsets[0].dy - h, w, h });
+    return { x: x + offsets[0].dx, y: y + offsets[0].dy };
+  }
+
+  // ── render ──
+
+  function render() {
+    svg.innerHTML = '';
+    const pointLabelSize = state.pointLabelSize;
+    const linkLabelSize = state.linkLabelSize;
+    const occupied = [];
+
+    // grid
+    if (state.showGrid) {
+      for (let x = 0; x <= VB_W; x += 20) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x); line.setAttribute('y1', 0);
+        line.setAttribute('x2', x); line.setAttribute('y2', VB_H);
+        line.setAttribute('stroke', 'var(--border)');
+        line.setAttribute('stroke-width', x % 100 === 0 ? '0.6' : '0.3');
+        line.setAttribute('opacity', x % 100 === 0 ? '0.6' : '0.35');
+        svg.appendChild(line);
+      }
+      for (let y = 0; y <= VB_H; y += 20) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', 0); line.setAttribute('y1', y);
+        line.setAttribute('x2', VB_W); line.setAttribute('y2', y);
+        line.setAttribute('stroke', 'var(--border)');
+        line.setAttribute('stroke-width', y % 100 === 0 ? '0.6' : '0.3');
+        line.setAttribute('opacity', y % 100 === 0 ? '0.6' : '0.35');
+        svg.appendChild(line);
+      }
+      for (let x = 100; x < VB_W; x += 100) {
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', x + 3); t.setAttribute('y', 14);
+        t.setAttribute('font-size', '10'); t.setAttribute('fill', 'var(--fg3)');
+        t.setAttribute('font-family', 'var(--mono)');
+        t.textContent = x;
+        svg.appendChild(t);
+      }
+      for (let y = 100; y < VB_H; y += 100) {
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', 3); t.setAttribute('y', y - 3);
+        t.setAttribute('font-size', '10'); t.setAttribute('fill', 'var(--fg3)');
+        t.setAttribute('font-family', 'var(--mono)');
+        t.textContent = y;
+        svg.appendChild(t);
+      }
+    }
+
+    // link segments
+    const drawLink = (link, ghost) => {
+      const opacity = ghost ? 0.55 : 0.9;
+      const dash = ghost ? '6 3' : 'none';
+      for (let i = 0; i < link.order.length - 1; i++) {
+        const a = link.points[link.order[i]];
+        const b = link.points[link.order[i + 1]];
+        if (!a || !b) continue;
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+        line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+        line.setAttribute('stroke', link.color);
+        line.setAttribute('stroke-width', '6');
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('opacity', opacity);
+        if (dash !== 'none') line.setAttribute('stroke-dasharray', dash);
+        svg.appendChild(line);
+      }
+    };
+    state.links.forEach(l => drawLink(l, false));
+    if (state.currentLink) drawLink(state.currentLink, true);
+
+    // hover preview line (while building)
+    if (state.currentLink && state.currentLink.order.length > 0 && state.hoverInfo) {
+      const lastLocal = state.currentLink.order[state.currentLink.order.length - 1];
+      const lastP = state.currentLink.points[lastLocal];
+      if (lastP) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', lastP.x); line.setAttribute('y1', lastP.y);
+        line.setAttribute('x2', state.hoverInfo.pos.x); line.setAttribute('y2', state.hoverInfo.pos.y);
+        line.setAttribute('stroke', state.currentLink.color);
+        line.setAttribute('stroke-width', '2');
+        line.setAttribute('opacity', '0.4');
+        line.setAttribute('stroke-dasharray', '3 3');
+        svg.appendChild(line);
+      }
+    }
+
+    // joint rings
+    const drawnGroups = new Set();
+    state.joints.forEach(j => {
+      const group = [...jointGroup(j.a)].sort().join('|');
+      if (drawnGroups.has(group)) return;
+      drawnGroups.add(group);
+      const p = getPoint(j.a);
+      if (!p) return;
+      const size = jointGroup(j.a).size;
+      const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      ring.setAttribute('cx', p.x); ring.setAttribute('cy', p.y);
+      ring.setAttribute('r', 10 + size * 2);
+      ring.setAttribute('fill', 'var(--info-bg)');
+      ring.setAttribute('stroke', 'var(--info-border)');
+      ring.setAttribute('stroke-width', '1.8');
+      ring.setAttribute('opacity', '0.75');
+      svg.appendChild(ring);
+    });
+
+    // link name labels
+    state.links.forEach(link => {
+      if (link.order.length < 2) return;
+      const a = link.points[link.order[0]];
+      const b = link.points[link.order[1]];
+      if (!a || !b) return;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const offsetDist = linkLabelSize * 0.9;
+      const px = -dy / len * offsetDist;
+      const py = dx / len * offsetDist;
+      const tx = mx + px, ty = my + py;
+      const w = link.name.length * linkLabelSize * 0.65;
+      const h = linkLabelSize;
+      occupied.push({ x: tx - w / 2, y: ty - h, w, h });
+
+      const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      bg.setAttribute('x', tx - w / 2 - 5);
+      bg.setAttribute('y', ty - h - 1);
+      bg.setAttribute('width', w + 10);
+      bg.setAttribute('height', h + 4);
+      bg.setAttribute('rx', 4);
+      bg.setAttribute('fill', 'var(--bg)');
+      bg.setAttribute('opacity', '0.9');
+      svg.appendChild(bg);
+
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', tx);
+      t.setAttribute('y', ty);
+      t.setAttribute('font-size', linkLabelSize);
+      t.setAttribute('fill', link.color);
+      t.setAttribute('font-family', 'var(--mono)');
+      t.setAttribute('font-weight', '700');
+      t.setAttribute('text-anchor', 'middle');
+      t.textContent = link.name;
+      svg.appendChild(t);
+    });
+
+    // point dots + labels
+    const drawPoints = (link) => {
+      for (const local of link.order) {
+        const p = link.points[local];
+        const ref = refOf(link.name, local);
+
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('cx', p.x); c.setAttribute('cy', p.y);
+        c.setAttribute('r', 7);
+        c.setAttribute('fill', 'var(--bg)');
+        c.setAttribute('stroke', link.color);
+        c.setAttribute('stroke-width', '2.5');
+        svg.appendChild(c);
+
+        const lw = ref.length * pointLabelSize * 0.6;
+        const lh = pointLabelSize;
+        const lpos = placeLabel(occupied, p.x, p.y, lw, lh);
+
+        const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        bg.setAttribute('x', lpos.x - 4);
+        bg.setAttribute('y', lpos.y - lh);
+        bg.setAttribute('width', lw + 8);
+        bg.setAttribute('height', lh + 3);
+        bg.setAttribute('rx', 3);
+        bg.setAttribute('fill', 'var(--bg)');
+        bg.setAttribute('opacity', '0.88');
+        svg.appendChild(bg);
+
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', lpos.x);
+        t.setAttribute('y', lpos.y - 3);
+        t.setAttribute('font-size', pointLabelSize);
+        t.setAttribute('fill', 'var(--fg)');
+        t.setAttribute('font-family', 'var(--mono)');
+        t.setAttribute('font-weight', '600');
+        t.textContent = ref;
+        svg.appendChild(t);
+      }
+    };
+    state.links.forEach(drawPoints);
+    if (state.currentLink) drawPoints(state.currentLink);
+
+    // drag-to-joint preview
+    if (state.drag && state.drag.snapTarget && state.drag.moved) {
+      const tp = state.drag.snapTarget.pos;
+      const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      ring.setAttribute('cx', tp.x); ring.setAttribute('cy', tp.y);
+      ring.setAttribute('r', 20);
+      ring.setAttribute('fill', 'none');
+      ring.setAttribute('stroke', 'var(--info-border)');
+      ring.setAttribute('stroke-width', '3');
+      ring.setAttribute('stroke-dasharray', '5 4');
+      svg.appendChild(ring);
+      const jt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      jt.setAttribute('x', tp.x); jt.setAttribute('y', tp.y + 38);
+      jt.setAttribute('font-size', '16');
+      jt.setAttribute('fill', 'var(--info-border)');
+      jt.setAttribute('font-family', 'var(--mono)');
+      jt.setAttribute('font-weight', '700');
+      jt.setAttribute('text-anchor', 'middle');
+      jt.textContent = 'joint \u2192 ' + state.drag.snapTarget.ref;
+      svg.appendChild(jt);
+    }
+
+    // hover indicators
+    if (state.hoverInfo) {
+      if (state.hoverInfo.existingRef) {
+        const p = getPoint(state.hoverInfo.existingRef);
+        if (p) {
+          const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          c.setAttribute('cx', p.x); c.setAttribute('cy', p.y);
+          c.setAttribute('r', 18);
+          c.setAttribute('fill', 'none');
+          c.setAttribute('stroke', 'var(--info-border)');
+          c.setAttribute('stroke-width', '3');
+          c.setAttribute('stroke-dasharray', '5 4');
+          svg.appendChild(c);
+          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          t.setAttribute('x', p.x); t.setAttribute('y', p.y + 40);
+          t.setAttribute('font-size', Math.max(16, pointLabelSize * 0.75));
+          t.setAttribute('fill', 'var(--info-border)');
+          t.setAttribute('font-family', 'var(--mono)');
+          t.setAttribute('font-weight', '700');
+          t.setAttribute('text-anchor', 'middle');
+          t.textContent = 'joint \u2192 ' + state.hoverInfo.existingRef;
+          svg.appendChild(t);
+        }
+      } else {
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('cx', state.hoverInfo.pos.x); c.setAttribute('cy', state.hoverInfo.pos.y);
+        c.setAttribute('r', 5);
+        c.setAttribute('fill', 'none');
+        c.setAttribute('stroke', 'var(--info-border)');
+        c.setAttribute('stroke-width', '1.5');
+        c.setAttribute('stroke-dasharray', '2 2');
+        svg.appendChild(c);
+      }
+    }
+  }
+
+  // ── serialize / parse ──
+
+  function serialize() {
+    const lines = [];
+    state.links.forEach(link => {
+      lines.push('link ' + link.name + ' [' + link.color + ']:');
+      link.order.forEach(local => {
+        const p = link.points[local];
+        lines.push('  ' + local + ': (' + p.x + ', ' + p.y + ')');
+      });
+      lines.push('');
+    });
+    if (state.joints.length > 0) {
+      lines.push('# joints');
+      state.joints.forEach(j => {
+        lines.push('joint: ' + j.a + ' = ' + j.b);
+      });
+    }
+    return lines.join('\n');
+  }
+  function syncText() { text.value = serialize(); }
+
+  function parse(src) {
+    const newLinks = [];
+    const newJoints = [];
+    const errors = [];
+    let currentLink = null;
+    src.split('\n').forEach((raw, idx) => {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) return;
+
+      const lm = line.match(/^link\s+(\S+)\s*(?:\[([^\]]+)\])?\s*:\s*$/);
+      if (lm) {
+        currentLink = {
+          name: lm[1],
+          color: lm[2] || LINK_COLORS[newLinks.length % LINK_COLORS.length],
+          points: {},
+          order: [],
+          nextPointId: 0
+        };
+        newLinks.push(currentLink);
+        return;
+      }
+
+      const pm = line.match(/^(\S+)\s*:\s*\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)\s*$/);
+      if (pm && currentLink) {
+        const local = pm[1];
+        currentLink.points[local] = { x: parseFloat(pm[2]), y: parseFloat(pm[3]) };
+        currentLink.order.push(local);
+        const m = local.match(/^p(\d+)$/);
+        if (m) currentLink.nextPointId = Math.max(currentLink.nextPointId, parseInt(m[1]) + 1);
+        return;
+      }
+
+      const jm = line.match(/^joint\s*:\s*(\S+)\s*=\s*(\S+)\s*$/);
+      if (jm) {
+        newJoints.push({ a: jm[1], b: jm[2] });
+        return;
+      }
+
+      errors.push('line ' + (idx + 1) + ': "' + line + '"');
+    });
+    return { links: newLinks, joints: newJoints, errors };
+  }
+
+  function applyText() {
+    const r = parse(text.value);
+    if (r.errors.length > 0) {
+      status.textContent = r.errors.join(' / ');
+      status.classList.add('err');
+      return;
+    }
+    state.links = r.links;
+    state.joints = r.joints;
+    state.currentLink = null;
+    let maxL = -1;
+    state.links.forEach(l => { const m = l.name.match(/^L(\d+)$/); if (m) maxL = Math.max(maxL, +m[1]); });
+    state.nextLinkId = maxL + 1;
+    status.textContent = 'loaded ' + state.links.length + ' links, ' + state.joints.length + ' joints.';
+    status.classList.remove('err');
+    render();
+  }
+
+  // ── drag helpers ──
+
+  function buildJointMovesForPoint(ref) {
+    const group = jointGroup(ref);
+    const moves = [];
+    group.forEach(gRef => {
+      if (gRef === ref) return;
+      const p = getPoint(gRef);
+      if (p) moves.push({ ref: gRef, orig: { x: p.x, y: p.y } });
+    });
+    return moves;
+  }
+
+  function buildJointMovesForLink(link) {
+    const moves = [];
+    const seen = new Set();
+    for (const local of link.order) {
+      const ref = refOf(link.name, local);
+      const group = jointGroup(ref);
+      group.forEach(gRef => {
+        if (parseRef(gRef).link === link.name) return;
+        if (seen.has(gRef)) return;
+        seen.add(gRef);
+        const p = getPoint(gRef);
+        if (p) moves.push({ ref: gRef, orig: { x: p.x, y: p.y } });
+      });
+    }
+    return moves;
+  }
+
+  function snapshotPoints(link) {
+    const snap = {};
+    for (const local in link.points) {
+      snap[local] = { x: link.points[local].x, y: link.points[local].y };
+    }
+    return snap;
+  }
+
+  function findSnapTarget(draggedLink, draggedLocal) {
+    const pos = draggedLink.points[draggedLocal];
+    const draggedRef = refOf(draggedLink.name, draggedLocal);
+    const group = jointGroup(draggedRef);
+    let best = null, bestD = 20;
+    state.links.forEach(l => {
+      if (l.name === draggedLink.name) return;
+      for (const local in l.points) {
+        const ref = refOf(l.name, local);
+        if (group.has(ref)) continue;
+        const d = distance(pos, l.points[local]);
+        if (d < bestD) { bestD = d; best = { ref, pos: l.points[local] }; }
+      }
+    });
+    return best;
+  }
+
+  function onDragMove(e) {
+    if (!state.drag) return;
+    const pos = svgCoords(e);
+    coordDisplay.textContent = Math.round(pos.x) + ', ' + Math.round(pos.y);
+
+    if (!state.drag.moved) {
+      const sdx = e.clientX - state.drag.screenX;
+      const sdy = e.clientY - state.drag.screenY;
+      if (sdx * sdx + sdy * sdy > 64) state.drag.moved = true;
+    }
+
+    if (state.drag.moved) {
+      const dx = pos.x - state.drag.startPos.x;
+      const dy = pos.y - state.drag.startPos.y;
+      const link = state.links[state.drag.linkIdx];
+
+      if (state.drag.mode === 'point') {
+        link.points[state.drag.localName] = {
+          x: state.drag.origPos.x + dx,
+          y: state.drag.origPos.y + dy
+        };
+        // magnetic snap to nearby point from other links
+        const snap = findSnapTarget(link, state.drag.localName);
+        if (snap) {
+          link.points[state.drag.localName] = { x: snap.pos.x, y: snap.pos.y };
+          const sdx2 = snap.pos.x - state.drag.origPos.x;
+          const sdy2 = snap.pos.y - state.drag.origPos.y;
+          state.drag.jointMoves.forEach(jm => {
+            const r = parseRef(jm.ref);
+            const ol = state.links.find(l => l.name === r.link);
+            if (ol && ol.points[r.point]) {
+              ol.points[r.point].x = jm.orig.x + sdx2;
+              ol.points[r.point].y = jm.orig.y + sdy2;
+            }
+          });
+        } else {
+          state.drag.jointMoves.forEach(jm => {
+            const r = parseRef(jm.ref);
+            const ol = state.links.find(l => l.name === r.link);
+            if (ol && ol.points[r.point]) {
+              ol.points[r.point].x = jm.orig.x + dx;
+              ol.points[r.point].y = jm.orig.y + dy;
+            }
+          });
+        }
+        state.drag.snapTarget = snap;
+      } else {
+        for (const local in state.drag.origPoints) {
+          link.points[local] = {
+            x: state.drag.origPoints[local].x + dx,
+            y: state.drag.origPoints[local].y + dy
+          };
+        }
+        state.drag.jointMoves.forEach(jm => {
+          const r = parseRef(jm.ref);
+          const ol = state.links.find(l => l.name === r.link);
+          if (ol && ol.points[r.point]) {
+            ol.points[r.point].x = jm.orig.x + dx;
+            ol.points[r.point].y = jm.orig.y + dy;
+          }
+        });
+        state.drag.snapTarget = null;
+      }
+
+      svg.style.cursor = 'grabbing';
+      document.body.style.cursor = 'grabbing';
+      state.hoverInfo = null;
+      const what = state.drag.mode === 'point'
+        ? link.name + '.' + state.drag.localName : link.name;
+      if (state.drag.snapTarget) {
+        status.textContent = 'joint \u2192 ' + state.drag.snapTarget.ref;
+      } else {
+        status.textContent = 'dragging ' + what + '\u2026';
+      }
+      status.classList.remove('err');
+      syncText();
+      render();
+    }
+  }
+
+  function onDragEnd(e) {
+    if (!state.drag) return;
+    const didMove = state.drag.moved;
+    if (didMove) {
+      const link = state.links[state.drag.linkIdx];
+
+      if (state.drag.mode === 'point' && state.drag.snapTarget) {
+        const draggedRef = refOf(link.name, state.drag.localName);
+        const targetRef = state.drag.snapTarget.ref;
+        const targetPos = state.drag.snapTarget.pos;
+        link.points[state.drag.localName] = { x: targetPos.x, y: targetPos.y };
+        const group = jointGroup(draggedRef);
+        if (!group.has(targetRef)) {
+          state.joints.push({ a: draggedRef, b: targetRef });
+          status.textContent = 'joined ' + draggedRef + ' with ' + targetRef + '.';
+        } else {
+          status.textContent = 'moved ' + draggedRef + '.';
+        }
+      } else {
+        const what = state.drag.mode === 'point'
+          ? link.name + '.' + state.drag.localName : link.name;
+        status.textContent = 'moved ' + what + '.';
+      }
+
+      syncText();
+      status.classList.remove('err');
+      dragEndTime = Date.now();
+    }
+    state.drag = null;
+    svg.style.cursor = 'crosshair';
+    document.body.style.cursor = '';
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+    if (didMove) render();
+  }
+
+  // ── events ──
+
+  svg.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (state.currentLink) return;
+    const pos = svgCoords(e);
+
+    // 1) near a finished link's point → point drag
+    const nearRef = findNearPoint(pos, 14);
+    if (nearRef) {
+      const r = parseRef(nearRef);
+      const linkIdx = state.links.findIndex(l => l.name === r.link);
+      if (linkIdx >= 0) {
+        const link = state.links[linkIdx];
+        const pp = link.points[r.point];
+        state.drag = {
+          mode: 'point',
+          linkIdx,
+          localName: r.point,
+          startPos: pos,
+          screenX: e.clientX,
+          screenY: e.clientY,
+          origPos: { x: pp.x, y: pp.y },
+          jointMoves: buildJointMovesForPoint(nearRef),
+          moved: false
+        };
+        document.addEventListener('mousemove', onDragMove);
+        document.addEventListener('mouseup', onDragEnd);
+        return;
+      }
+    }
+
+    // 2) on a segment → link drag
+    const segIdx = findNearSegment(pos);
+    if (segIdx >= 0) {
+      const link = state.links[segIdx];
+      state.drag = {
+        mode: 'link',
+        linkIdx: segIdx,
+        startPos: pos,
+        screenX: e.clientX,
+        screenY: e.clientY,
+        origPoints: snapshotPoints(link),
+        jointMoves: buildJointMovesForLink(link),
+        moved: false
+      };
+      document.addEventListener('mousemove', onDragMove);
+      document.addEventListener('mouseup', onDragEnd);
+    }
+  });
+
+  svg.addEventListener('mousemove', e => {
+    const pos = svgCoords(e);
+    coordDisplay.textContent = Math.round(pos.x) + ', ' + Math.round(pos.y);
+
+    // drag is handled by document-level listener
+    if (state.drag) return;
+
+    // hover logic
+    const near = findNearPoint(pos);
+    if (state.currentLink) {
+      // building a link: show joint preview for other links' points
+      if (near) {
+        const nearLink = parseRef(near).link;
+        if (nearLink === state.currentLink.name) {
+          state.hoverInfo = { pos, existingRef: null };
+        } else {
+          state.hoverInfo = { pos, existingRef: near };
+        }
+      } else {
+        state.hoverInfo = { pos, existingRef: null };
+      }
+      svg.style.cursor = 'crosshair';
+    } else {
+      // not building: no joint preview, show grab cursor on draggable targets
+      state.hoverInfo = { pos, existingRef: null };
+      if (near || findNearSegment(pos) >= 0) {
+        svg.style.cursor = 'grab';
+      } else {
+        svg.style.cursor = 'crosshair';
+      }
+    }
+
+    render();
+  });
+
+  svg.addEventListener('mouseleave', () => {
+    if (state.drag) return;
+    state.hoverInfo = null;
+    coordDisplay.textContent = '-';
+    render();
+  });
+
+  svg.addEventListener('click', e => {
+    if (Date.now() - dragEndTime < 300) return;
+    const pos = svgCoords(e);
+    if (!state.currentLink) state.currentLink = newLink();
+    const near = findNearPoint(pos);
+    let joinRef = null;
+    if (near) {
+      const nearLink = parseRef(near).link;
+      if (nearLink !== state.currentLink.name) joinRef = near;
+    }
+    let pointPos = pos;
+    if (joinRef) {
+      const ep = getPoint(joinRef);
+      if (ep) pointPos = { x: ep.x, y: ep.y };
+    }
+    const localName = addPointToLink(state.currentLink, pointPos);
+    const newRef = refOf(state.currentLink.name, localName);
+    if (joinRef) {
+      state.joints.push({ a: joinRef, b: newRef });
+      status.textContent = newRef + ' joined with ' + joinRef;
+    } else {
+      status.textContent = newRef + ' added to ' + state.currentLink.name;
+    }
+    status.classList.remove('err');
+    syncText();
+    render();
+  });
+
+  // ── context menu ──
+
+  let ctxMenu = null;
+  function closeCtxMenu() {
+    if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
+  }
+  document.addEventListener('click', closeCtxMenu);
+  document.addEventListener('contextmenu', () => closeCtxMenu());
+
+  function showCtxMenu(x, y, items) {
+    closeCtxMenu();
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    items.forEach(item => {
+      const row = document.createElement('div');
+      row.textContent = item.label;
+      if (item.danger) row.classList.add('danger');
+      row.addEventListener('mousedown', e => {
+        e.stopPropagation();
+        closeCtxMenu();
+        item.action();
+      });
+      menu.appendChild(row);
+    });
+    document.body.appendChild(menu);
+    ctxMenu = menu;
+  }
+
+  svg.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    const pos = svgCoords(e);
+
+    // if building a link, right click = finish
+    if (state.currentLink) {
+      finishCurrentLink();
+      return;
+    }
+
+    // check if right-clicked on a finished link
+    const nearRef = findNearPoint(pos, 14);
+    let targetLink = null;
+    if (nearRef) {
+      const name = parseRef(nearRef).link;
+      targetLink = state.links.find(l => l.name === name);
+    }
+    if (!targetLink) {
+      const segIdx = findNearSegment(pos);
+      if (segIdx >= 0) targetLink = state.links[segIdx];
+    }
+
+    if (targetLink) {
+      e.stopPropagation();
+      const items = [];
+      items.push({
+        label: 'delete ' + targetLink.name,
+        danger: true,
+        action: () => {
+          const prefix = targetLink.name + '.';
+          state.links = state.links.filter(l => l !== targetLink);
+          state.joints = state.joints.filter(j =>
+            !j.a.startsWith(prefix) && !j.b.startsWith(prefix));
+          syncText();
+          status.textContent = 'deleted ' + targetLink.name + '.';
+          status.classList.remove('err');
+          render();
+        }
+      });
+      showCtxMenu(e.clientX, e.clientY, items);
+    }
+  });
+
+  function finishCurrentLink() {
+    if (state.currentLink && state.currentLink.order.length >= 2) {
+      state.links.push(state.currentLink);
+      status.textContent = 'finished ' + state.currentLink.name + '.';
+    } else if (state.currentLink) {
+      const prefix = state.currentLink.name + '.';
+      state.joints = state.joints.filter(j => !j.a.startsWith(prefix) && !j.b.startsWith(prefix));
+    }
+    state.currentLink = null;
+    syncText();
+    render();
+  }
+
+  // ── toolbar ──
+
+  document.getElementById('finishBtn').addEventListener('click', finishCurrentLink);
+
+  document.getElementById('undoBtn').addEventListener('click', () => {
+    if (state.currentLink && state.currentLink.order.length > 0) {
+      const removedLocal = state.currentLink.order.pop();
+      const removedRef = refOf(state.currentLink.name, removedLocal);
+      delete state.currentLink.points[removedLocal];
+      state.joints = state.joints.filter(j => j.a !== removedRef && j.b !== removedRef);
+    } else if (state.links.length > 0) {
+      const removed = state.links.pop();
+      const prefix = removed.name + '.';
+      state.joints = state.joints.filter(j => !j.a.startsWith(prefix) && !j.b.startsWith(prefix));
+    }
+    syncText(); render();
+  });
+
+  document.getElementById('deleteBtn').addEventListener('click', () => {
+    if (state.links.length === 0) return;
+    const removed = state.links.pop();
+    const prefix = removed.name + '.';
+    state.joints = state.joints.filter(j => !j.a.startsWith(prefix) && !j.b.startsWith(prefix));
+    syncText(); render();
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    state.links = []; state.joints = []; state.currentLink = null;
+    state.nextLinkId = 0;
+    syncText(); render();
+  });
+
+  document.getElementById('gridBtn').addEventListener('click', () => {
+    state.showGrid = !state.showGrid; render();
+  });
+
+  const SNAP_SIZES = [20, 10, 0];
+  let snapIdx = 0;
+  document.getElementById('snapBtn').addEventListener('click', e => {
+    snapIdx = (snapIdx + 1) % SNAP_SIZES.length;
+    const sz = SNAP_SIZES[snapIdx];
+    if (sz === 0) {
+      state.snap = false;
+      e.target.textContent = 'snap: off';
+    } else {
+      state.snap = true;
+      state.snapSize = sz;
+      e.target.textContent = 'snap: ' + sz;
+    }
+  });
+
+  const ptSlider = document.getElementById('ptSizeSlider');
+  const ptVal = document.getElementById('ptSizeVal');
+  ptSlider.addEventListener('input', e => {
+    state.pointLabelSize = +e.target.value;
+    ptVal.textContent = e.target.value;
+    render();
+  });
+  const linkSlider = document.getElementById('linkSizeSlider');
+  const linkVal = document.getElementById('linkSizeVal');
+  linkSlider.addEventListener('input', e => {
+    state.linkLabelSize = +e.target.value;
+    linkVal.textContent = e.target.value;
+    render();
+  });
+
+  // ── sidebar buttons ──
+
+  document.getElementById('applyBtn').addEventListener('click', applyText);
+
+  document.getElementById('copyBtn').addEventListener('click', () => {
+    navigator.clipboard.writeText(text.value).then(() => {
+      status.textContent = 'copied.';
+    });
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', () => {
+    const blob = new Blob([text.value], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'linkage.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('loadBtn').addEventListener('click', () => {
+    document.getElementById('fileInput').click();
+  });
+  document.getElementById('fileInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      text.value = ev.target.result;
+      applyText();
+    };
+    reader.readAsText(file);
+  });
+
+  window.addEventListener('resize', render);
+
+  syncText();
+  render();
+})();
+</script>
+</body>
+</html>
