@@ -46,11 +46,13 @@
   }
   body {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr;
     gap: 10px;
     padding: 10px;
   }
-  .mobile-only { display: none; }
+  body.side-open {
+    grid-template-columns: 1fr 320px;
+  }
   .canvas-col {
     display: flex;
     flex-direction: column;
@@ -89,11 +91,12 @@
     touch-action: none;
   }
   .side {
-    display: flex;
+    display: none;
     flex-direction: column;
     gap: 8px;
     min-height: 0;
   }
+  .side.open { display: flex; }
   .side .bar { display: flex; gap: 6px; flex-wrap: wrap; }
   .btn {
     padding: 6px 10px;
@@ -107,6 +110,10 @@
     transition: background 0.12s;
   }
   .btn:hover { background: var(--bg2); }
+  .btn.active {
+    background: var(--bg2);
+    border-color: var(--fg);
+  }
   .btn.primary {
     background: var(--info-bg);
     color: var(--info-fg);
@@ -128,19 +135,32 @@
   }
   .side textarea:focus { border-color: var(--info-border); }
   .status {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--fg2);
-    padding: 6px 2px;
-    min-height: 18px;
+    padding: 2px 8px;
     line-height: 1.4;
+    align-self: flex-start;
+    background: var(--bg);
+    border-radius: 4px;
+    opacity: 0.85;
+    transition: opacity 0.6s ease;
   }
   .status.err { color: var(--danger); }
-  .hint {
-    font-size: 12px;
-    color: var(--fg3);
-    padding: 4px 2px;
-    line-height: 1.5;
+  .status.fading { opacity: 0; }
+  .status:empty { display: none; }
+  .overlay-bottom {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    pointer-events: none;
+    z-index: 5;
   }
+  .overlay-bottom .action-bar { pointer-events: auto; }
+  .overlay-bottom .status { pointer-events: none; }
   .coords {
     font-size: 12px;
     color: var(--fg3);
@@ -168,25 +188,29 @@
   .action-bar {
     display: flex;
     gap: 6px;
-    padding: 8px 10px;
+    padding: 6px 10px;
     background: var(--bg);
     border: 0.5px solid var(--border);
     border-radius: var(--radius);
     align-items: center;
     flex-wrap: wrap;
-    min-height: 44px;
+    min-height: 40px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 6px 18px rgba(0,0,0,0.18);
   }
+  .action-bar.hidden { display: none; }
   .action-bar .placeholder {
     font-size: 12px;
     color: var(--fg3);
     font-style: italic;
   }
   .action-bar .btn {
-    background: #fff;
-    color: #1a1a18;
+    background: var(--bg2);
+    color: var(--fg);
+    border-color: var(--border);
   }
   .action-bar .btn:hover {
-    background: #f1efe8;
+    background: var(--bg);
+    border-color: var(--border2);
   }
   .action-bar .label {
     font-size: 11px;
@@ -198,18 +222,30 @@
   }
   .action-bar .btn.primary,
   .action-bar .btn.active {
-    background: #fff;
-    color: #1a1a18;
-    border-color: #1a1a18;
+    background: var(--bg2);
+    color: var(--fg);
+    border-color: var(--fg);
     font-weight: 600;
   }
   .action-bar .btn.danger {
-    background: #fff;
-    color: #1a1a18;
-    border-color: #1a1a18;
+    background: var(--bg2);
+    color: var(--fg);
+    border-color: var(--border2);
   }
-  .action-bar .btn.danger:hover {
-    background: #f1efe8;
+  .action-bar .btn.ghost {
+    background: transparent;
+    color: var(--fg3);
+    border-color: var(--border2);
+  }
+  .action-bar .btn.ghost:hover {
+    background: var(--bg2);
+    color: var(--fg);
+  }
+  .action-bar .divider {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border);
+    margin: 4px 4px;
   }
   .rest-group {
     display: flex;
@@ -227,24 +263,20 @@
     padding: 0 2px;
   }
   @media (max-width: 820px) {
-    body {
+    body, body.side-open {
       grid-template-columns: 1fr;
       padding: 6px;
       gap: 6px;
     }
-    .side {
-      display: none;
+    .side.open {
       position: fixed;
       inset: 0;
       z-index: 100;
       background: var(--bg);
       padding: 10px;
     }
-    .side.open { display: flex; }
     .toolbar { font-size: 12px; }
     .btn { padding: 7px 10px; }
-    .mobile-only { display: inline-flex; }
-    .hint { font-size: 11px; }
   }
 </style>
 </head>
@@ -258,7 +290,7 @@
         <button class="btn" id="labelsBtn">labels</button>
         <button class="btn" id="snapBtn">snap: 20</button>
         <button class="btn" id="fitBtn" title="Fit view to content">fit</button>
-        <button class="btn mobile-only" id="sideToggleBtn" title="Show JSON panel">JSON</button>
+        <button class="btn" id="sideToggleBtn" title="Toggle JSON panel">JSON</button>
         <span class="rest-group">
           <span class="rest-label">rest position</span>
           <button class="btn" id="captureBtn">capture</button><button class="btn" id="resetBtn" disabled style="opacity:0.4">reset</button>
@@ -270,11 +302,10 @@
         <span class="coords" id="coordDisplay">-</span>
       </div>
       <svg id="canvas" viewBox="0 0 900 1100" preserveAspectRatio="xMidYMid meet"></svg>
-    </div>
-    <div class="action-bar" id="actionBar"></div>
-    <div class="status" id="status">click to start the first link.</div>
-    <div class="hint">
-      tap = add / select &nbsp;·&nbsp; drag input = simulate &nbsp;·&nbsp; wheel or pinch = zoom &nbsp;·&nbsp; 2-finger / space+drag = pan
+      <div class="overlay-bottom">
+        <div class="action-bar" id="actionBar"></div>
+        <div class="status" id="status">click to start the first link.</div>
+      </div>
     </div>
   </div>
 
@@ -285,7 +316,7 @@
       <button class="btn" id="copyBtn">copy</button>
       <button class="btn" id="saveBtn">save</button>
       <button class="btn" id="loadBtn">load</button>
-      <button class="btn mobile-only" id="sideCloseBtn">close</button>
+      <button class="btn" id="sideCloseBtn">close</button>
       <input type="file" id="fileInput" style="display:none" accept=".txt,.linkage">
     </div>
     <div class="section-label">link definition</div>
@@ -298,6 +329,26 @@
   const svg = document.getElementById('canvas');
   const text = document.getElementById('defText');
   const status = document.getElementById('status');
+  // auto-dismiss status text ~2.5s after last change, with fade transition
+  (function setupStatusAutoDismiss() {
+    let fadeT = null, clearT = null;
+    const obs = new MutationObserver(() => {
+      if (!status.textContent) return;
+      status.classList.remove('fading');
+      if (fadeT) clearTimeout(fadeT);
+      if (clearT) clearTimeout(clearT);
+      fadeT = setTimeout(() => {
+        status.classList.add('fading');
+        clearT = setTimeout(() => {
+          obs.disconnect();
+          status.textContent = '';
+          status.classList.remove('fading', 'err');
+          obs.observe(status, { childList: true, characterData: true, subtree: true });
+        }, 700);
+      }, 2500);
+    });
+    obs.observe(status, { childList: true, characterData: true, subtree: true });
+  })();
   const coordDisplay = document.getElementById('coordDisplay');
 
   const VB_W = 900, VB_H = 1100;
@@ -582,16 +633,17 @@
   function renderActionBar() {
     actionBar.innerHTML = '';
 
-    const placeholder = (txt) => {
-      const s = document.createElement('span');
-      s.className = 'placeholder';
-      s.textContent = txt;
-      actionBar.appendChild(s);
-    };
+    // show bar only when something contextual is happening
+    const hasContext = state.drag || state.currentLink || state.selection;
+    actionBar.classList.toggle('hidden', !hasContext);
+    if (!hasContext) return;
 
     // drag in progress — keep bar space but show hint
     if (state.drag) {
-      placeholder(state.drag.kinematic ? 'simulating…' : 'dragging…');
+      const s = document.createElement('span');
+      s.className = 'placeholder';
+      s.textContent = state.drag.kinematic ? 'simulating…' : 'dragging…';
+      actionBar.appendChild(s);
       return;
     }
 
@@ -601,6 +653,7 @@
       if (opts && opts.primary) b.classList.add('primary');
       if (opts && opts.danger) b.classList.add('danger');
       if (opts && opts.active) b.classList.add('active');
+      if (opts && opts.ghost) b.classList.add('ghost');
       b.textContent = label;
       b.addEventListener('click', e => { e.stopPropagation(); onClick(); });
       actionBar.appendChild(b);
@@ -612,6 +665,11 @@
       s.textContent = txt;
       actionBar.appendChild(s);
     };
+    const addDivider = () => {
+      const d = document.createElement('span');
+      d.className = 'divider';
+      actionBar.appendChild(d);
+    };
 
     // drawing mode
     if (state.currentLink) {
@@ -619,12 +677,25 @@
       const canFinish = state.currentLink.order.length >= 2;
       const fin = add('✓ finish', () => finishCurrentLink(), { primary: canFinish });
       if (!canFinish) { fin.disabled = true; fin.style.opacity = '0.4'; }
-      add('✗ cancel', () => cancelCurrentLink(), { danger: true });
+      add('✗ cancel', () => cancelCurrentLink(), { ghost: true });
       return;
     }
 
-    if (!state.selection) {
-      placeholder('tap empty space to draw · tap a point or link to select');
+    if (state.selection.type === 'sim') {
+      addLabel('simulated pose');
+      const hasRest = !!state.restConfig;
+      add('capture', () => {
+        document.getElementById('captureBtn').click();
+        clearSelection();
+        render();
+      });
+      const resetBtn = add('reset', () => {
+        document.getElementById('resetBtn').click();
+        clearSelection();
+      });
+      if (!hasRest) { resetBtn.disabled = true; resetBtn.style.opacity = '0.4'; }
+      addDivider();
+      add('done', () => { clearSelection(); render(); }, { ghost: true });
       return;
     }
 
@@ -654,7 +725,23 @@
         syncText();
         render();
       }, { active: isOrigin });
-      add('done', () => { clearSelection(); render(); });
+      addDivider();
+      add('new link', () => {
+        const ep = getPoint(ref);
+        if (!ep) { clearSelection(); render(); return; }
+        pushHistory();
+        state.currentLink = newLink();
+        const localName = addPointToLink(state.currentLink, { x: ep.x, y: ep.y });
+        const newRef = refOf(state.currentLink.name, localName);
+        state.joints.push({ a: ref, b: newRef });
+        clearSelection();
+        status.textContent = 'started ' + state.currentLink.name + ' from ' + ref + '.';
+        status.classList.remove('err');
+        syncText();
+        render();
+      });
+      addDivider();
+      add('done', () => { clearSelection(); render(); }, { ghost: true });
       return;
     }
 
@@ -678,7 +765,8 @@
         status.classList.remove('err');
         render();
       }, { danger: true });
-      add('done', () => { clearSelection(); render(); });
+      addDivider();
+      add('done', () => { clearSelection(); render(); }, { ghost: true });
     }
   }
 
@@ -711,13 +799,27 @@
     // origin reference for grid labels / text display
     const originPos = state.origin ? getPoint(state.origin) : null;
 
-    // grid — spans currently visible viewBox, negative coords allowed
+    // effective visible viewBox — expands v.* to include letterbox area under xMidYMid meet
+    let visX = v.x, visY = v.y, visW = v.w, visH = v.h;
+    if (rect.width > 0 && rect.height > 0) {
+      const aspectScreen = rect.width / rect.height;
+      const aspectVB = v.w / v.h;
+      if (aspectScreen > aspectVB) {
+        visW = v.h * aspectScreen;
+        visX = v.x - (visW - v.w) / 2;
+      } else if (aspectScreen < aspectVB) {
+        visH = v.w / aspectScreen;
+        visY = v.y - (visH - v.h) / 2;
+      }
+    }
+
+    // grid — spans full visible area (including letterbox), negative coords allowed
     if (state.showGrid) {
       const minorStep = 20, majorStep = 100;
-      const x0 = Math.floor(v.x / minorStep) * minorStep;
-      const x1 = Math.ceil((v.x + v.w) / minorStep) * minorStep;
-      const y0 = Math.floor(v.y / minorStep) * minorStep;
-      const y1 = Math.ceil((v.y + v.h) / minorStep) * minorStep;
+      const x0 = Math.floor(visX / minorStep) * minorStep;
+      const x1 = Math.ceil((visX + visW) / minorStep) * minorStep;
+      const y0 = Math.floor(visY / minorStep) * minorStep;
+      const y1 = Math.ceil((visY + visH) / minorStep) * minorStep;
       const tooManyMinor = (x1 - x0) / minorStep > 400 || (y1 - y0) / minorStep > 400;
       const step = tooManyMinor ? majorStep : minorStep;
       for (let x = x0; x <= x1; x += step) {
@@ -739,25 +841,6 @@
         line.setAttribute('stroke-width', isMajor ? '0.6' : '0.3');
         line.setAttribute('opacity', isMajor ? '0.6' : '0.35');
         svg.appendChild(line);
-      }
-      // axis number labels — displayed relative to origin if set
-      const labelFontSize = px(11);
-      const labelPad = labelFontSize * 0.3;
-      for (let x = Math.ceil(v.x / majorStep) * majorStep; x < v.x + v.w; x += majorStep) {
-        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        t.setAttribute('x', x + labelPad); t.setAttribute('y', v.y + labelFontSize + labelPad);
-        t.setAttribute('font-size', labelFontSize); t.setAttribute('fill', 'var(--fg3)');
-        t.setAttribute('font-family', 'var(--mono)');
-        t.textContent = originPos ? roundCoord(x - originPos.x) : x;
-        svg.appendChild(t);
-      }
-      for (let y = Math.ceil(v.y / majorStep) * majorStep; y < v.y + v.h; y += majorStep) {
-        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        t.setAttribute('x', v.x + labelPad); t.setAttribute('y', y - labelPad);
-        t.setAttribute('font-size', labelFontSize); t.setAttribute('fill', 'var(--fg3)');
-        t.setAttribute('font-family', 'var(--mono)');
-        t.textContent = originPos ? roundCoord(y - originPos.y) : y;
-        svg.appendChild(t);
       }
     }
 
@@ -799,32 +882,17 @@
       }
     }
 
-    // origin cross marker (constant screen size)
+    // origin marker — prominent filled dot (constant screen size)
     if (state.origin) {
       const op = getPoint(state.origin);
       if (op) {
-        const sz = px(20);
-        const sw = px(1.2);
-        const mk = (x1, y1, x2, y2) => {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', x1); line.setAttribute('y1', y1);
-          line.setAttribute('x2', x2); line.setAttribute('y2', y2);
-          line.setAttribute('stroke', 'var(--fg)');
-          line.setAttribute('stroke-width', sw);
-          line.setAttribute('opacity', '0.55');
-          svg.appendChild(line);
-        };
-        mk(op.x - sz, op.y, op.x + sz, op.y);
-        mk(op.x, op.y - sz, op.x, op.y + sz);
-        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        t.setAttribute('x', op.x + sz + px(4));
-        t.setAttribute('y', op.y - px(6));
-        t.setAttribute('font-size', px(12));
-        t.setAttribute('fill', 'var(--fg2)');
-        t.setAttribute('font-family', 'var(--mono)');
-        t.setAttribute('opacity', '0.7');
-        t.textContent = 'origin';
-        svg.appendChild(t);
+        const r = px(7);
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('cx', op.x); dot.setAttribute('cy', op.y);
+        dot.setAttribute('r', r);
+        dot.setAttribute('fill', 'var(--fg)');
+        dot.setAttribute('opacity', '0.85');
+        svg.appendChild(dot);
       }
     }
 
@@ -1626,8 +1694,9 @@
   function onDragEnd(e) {
     if (!state.drag) return;
     const didMove = state.drag.moved;
+    const wasKinematic = state.drag.kinematic;
     if (didMove) {
-      if (state.drag.kinematic) {
+      if (wasKinematic) {
         // keep simulated position (no auto-reset)
         status.textContent = 'simulation paused at current position.';
       } else {
@@ -1672,6 +1741,7 @@
     document.removeEventListener('pointermove', onDragMove);
     document.removeEventListener('pointerup', onDragEnd);
     document.removeEventListener('pointercancel', onDragEnd);
+    if (didMove && wasKinematic) state.selection = { type: 'sim' };
     if (didMove) render();
   }
 
@@ -2259,11 +2329,17 @@
   window.addEventListener('resize', render);
 
   const sidePanel = document.getElementById('sidePanel');
-  document.getElementById('sideToggleBtn').addEventListener('click', () => {
-    sidePanel.classList.toggle('open');
+  const sideToggleBtn = document.getElementById('sideToggleBtn');
+  function setSideOpen(open) {
+    sidePanel.classList.toggle('open', open);
+    document.body.classList.toggle('side-open', open);
+    sideToggleBtn.classList.toggle('active', open);
+  }
+  sideToggleBtn.addEventListener('click', () => {
+    setSideOpen(!sidePanel.classList.contains('open'));
   });
   document.getElementById('sideCloseBtn').addEventListener('click', () => {
-    sidePanel.classList.remove('open');
+    setSideOpen(false);
   });
 
   // restore from localStorage if any
