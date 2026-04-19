@@ -160,6 +160,7 @@
     z-index: 5;
   }
   .overlay-bottom .action-bar { pointer-events: auto; }
+  .overlay-bottom .help-popover { pointer-events: auto; align-self: flex-start; position: relative; }
   .overlay-bottom .status { pointer-events: none; }
   .coords {
     font-size: 12px;
@@ -198,6 +199,30 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 6px 18px rgba(0,0,0,0.18);
   }
   .action-bar.hidden { display: none; }
+  .action-bar .help-local {
+    min-width: 28px;
+    font-family: var(--mono);
+    font-weight: 600;
+    color: var(--fg3);
+  }
+  .help-popover {
+    position: absolute;
+    z-index: 200;
+    max-width: 320px;
+    padding: 10px 12px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 0.5px solid var(--border2);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    font-size: 12px;
+    line-height: 1.5;
+    pointer-events: auto;
+  }
+  .help-popover.hidden { display: none; }
+  .help-popover dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+  .help-popover dt { font-family: var(--mono); font-weight: 600; color: var(--fg); white-space: nowrap; }
+  .help-popover dd { margin: 0; color: var(--fg2); }
   .action-bar .placeholder {
     font-size: 12px;
     color: var(--fg3);
@@ -289,8 +314,8 @@
         <button class="btn" id="gridBtn">grid</button>
         <button class="btn" id="labelsBtn">labels</button>
         <button class="btn" id="snapBtn">snap: 20</button>
-        <button class="btn" id="fitBtn" title="Fit view to content">fit</button>
-        <button class="btn" id="sideToggleBtn" title="Toggle JSON panel">JSON</button>
+        <button class="btn" id="fitBtn">fit</button>
+        <button class="btn" id="sideToggleBtn">JSON</button>
         <span class="rest-group">
           <span class="rest-label">rest position</span>
           <button class="btn" id="captureBtn">capture</button><button class="btn" id="resetBtn" disabled style="opacity:0.4">reset</button>
@@ -303,6 +328,7 @@
       </div>
       <svg id="canvas" viewBox="0 0 900 1100" preserveAspectRatio="xMidYMid meet"></svg>
       <div class="overlay-bottom">
+        <div class="help-popover hidden" id="helpPopover"></div>
         <div class="action-bar" id="actionBar"></div>
         <div class="status" id="status">click to start the first link.</div>
       </div>
@@ -617,9 +643,37 @@
   // ── selection + action bar ──
 
   const actionBar = document.getElementById('actionBar');
+  const helpPopover = document.getElementById('helpPopover');
+  let helpOpen = false;
+  function closeHelp() {
+    helpOpen = false;
+    helpPopover.classList.add('hidden');
+    helpPopover.innerHTML = '';
+  }
+  function openHelp(items) {
+    helpOpen = true;
+    const dl = document.createElement('dl');
+    for (const [term, desc] of items) {
+      const dt = document.createElement('dt'); dt.textContent = term;
+      const dd = document.createElement('dd'); dd.textContent = desc;
+      dl.appendChild(dt); dl.appendChild(dd);
+    }
+    helpPopover.innerHTML = '';
+    helpPopover.appendChild(dl);
+    helpPopover.classList.remove('hidden');
+  }
+  document.addEventListener('pointerdown', e => {
+    if (!helpOpen) return;
+    if (e.target.closest('#helpPopover') || e.target.closest('.help-local')) return;
+    closeHelp();
+  }, true);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && helpOpen) closeHelp();
+  });
 
   function clearSelection() {
     if (state.selection) state.selection = null;
+    if (helpOpen) closeHelp();
   }
 
   function selectPoint(ref) {
@@ -632,6 +686,7 @@
 
   function renderActionBar() {
     actionBar.innerHTML = '';
+    closeHelp();
 
     // show bar only when something contextual is happening
     const hasContext = state.drag || state.currentLink || state.selection;
@@ -670,6 +725,17 @@
       d.className = 'divider';
       actionBar.appendChild(d);
     };
+    const addHelp = (items) => {
+      const b = document.createElement('button');
+      b.className = 'btn ghost help-local';
+      b.textContent = '?';
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        if (helpOpen) closeHelp();
+        else openHelp(items);
+      });
+      actionBar.appendChild(b);
+    };
 
     // drawing mode
     if (state.currentLink) {
@@ -696,6 +762,10 @@
       if (!hasRest) { resetBtn.disabled = true; resetBtn.style.opacity = '0.4'; }
       addDivider();
       add('done', () => { clearSelection(); render(); }, { ghost: true });
+      addHelp([
+        ['capture', '지금 포즈를 rest(기준)로 저장.'],
+        ['reset', '저장된 rest 포즈로 되돌림.'],
+      ]);
       return;
     }
 
@@ -742,6 +812,13 @@
       });
       addDivider();
       add('done', () => { clearSelection(); render(); }, { ghost: true });
+      addHelp([
+        ['ground', '고정되어 회전하는 점.'],
+        ['input', '드래그 핸들 포인트. 잡고 이동 시킬때.'],
+        ['friction', '고정은 아닌데 마찰을 줘서 천천히 움직이게.'],
+        [isOrigin ? 'clear origin' : 'origin', '이 점을 좌표계 원점으로 지정/해제.'],
+        ['new link', '새 링크 만들때 선택한 점을 조인트로 시작.'],
+      ]);
       return;
     }
 
